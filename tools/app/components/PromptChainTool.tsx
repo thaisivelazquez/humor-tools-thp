@@ -683,7 +683,7 @@ export default function PromptChainTool() {
                       )}
                       {!testError && !testRunning && testResults.length === 0 && (
                         <div className="pct-captions-empty">
-                          <div style={{ fontSize: 28 }}>💬</div>
+
                           <div>Captions will appear here after running.</div>
                         </div>
                       )}
