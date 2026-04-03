@@ -597,35 +597,6 @@ const activeGroup: NavGroup =
           <PromptChainTool />
         )}
 
-        {activeTab === 'profiles' && (
-          <div className="card">
-            <div className="section-header">
-              <h2 className="section-title" style={{ margin: 0 }}>Profiles</h2>
-              <SortToggle />
-            </div>
-            <div className="table-wrapper">
-              <table className="table">
-                <thead><tr>{['ID', 'First Name', 'Last Name', 'Email', 'Superadmin', 'In Study', 'Matrix Admin', 'Created', 'Modified'].map(h => <th key={h} className="th">{h}</th>)}</tr></thead>
-                <tbody>
-                  {profiles.map(p => (
-                    <tr key={p.id}>
-                      <TextCell value={p.id} title="Profile ID" />
-                      <td className="td">{p.first_name ?? '—'}</td>
-                      <td className="td">{p.last_name ?? '—'}</td>
-                      <td className="td">{p.email ?? '—'}</td>
-                      <td className="td">{p.is_superadmin ? 'Yes' : 'No'}</td>
-                      <td className="td">{p.is_in_study ? 'Yes' : 'No'}</td>
-                      <td className="td">{p.is_matrix_admin ? 'Yes' : 'No'}</td>
-                      <td className="td">{p.created_datetime_utc ? new Date(p.created_datetime_utc).toLocaleString() : '—'}</td>
-                      <td className="td">{p.modified_datetime_utc ? new Date(p.modified_datetime_utc).toLocaleString() : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pagination pager={profileP} data={profiles} />
-          </div>
-        )}
 
         {activeTab === 'images' && (
           <div className="card">
