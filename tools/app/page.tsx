@@ -13,9 +13,11 @@ type Tab =
   | 'humor_flavors' | 'humor_flavor_steps' | 'humor_flavor_mix'
   | 'llm_models' | 'llm_providers' | 'llm_responses' | 'llm_prompt_chains'
 
+type ColorMode = 'light' | 'dark' | 'system'
+
 const ITEMS_PER_PAGE = 10
 
-const NAV_GROUPS: { group: NavGroup; label: string; tabs?: { tab: Tab; label: string }[] }[] = [
+const NAV_GROUPS = [
   {
     group: 'dashboard',
     label: 'Prompt Tool',
@@ -63,78 +65,45 @@ export default function Page() {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('adminActiveTab') as Tab) ?? 'prompt_chain_tool'
     }
-    return 'dashboard'
+    return 'prompt_chain_tool'
   })
   const [openGroup, setOpenGroup] = useState<NavGroup | null>(null)
   const navRef = useRef<HTMLDivElement>(null)
- const [steps, setSteps] = useState<any[]>([])
- const [flavors, setFlavors] = useState<any[]>([])
 
- const [selectedFlavor, setSelectedFlavor] = useState<any>(null)
+  // ── Color mode ──
+  const [colorMode, setColorMode] = useState<ColorMode>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('colorMode') as ColorMode) ?? 'system'
+    }
+    return 'system'
+  })
 
+  useEffect(() => {
+    const root = document.documentElement
+    const apply = (dark: boolean) => root.setAttribute('data-theme', dark ? 'dark' : 'light')
+    if (colorMode === 'system') {
+      const mq = window.matchMedia('(prefers-color-scheme: dark)')
+      apply(mq.matches)
+      const handler = (e: MediaQueryListEvent) => apply(e.matches)
+      mq.addEventListener('change', handler)
+      return () => mq.removeEventListener('change', handler)
+    } else {
+      apply(colorMode === 'dark')
+    }
+  }, [colorMode])
 
- // Load all flavors on mount
- useEffect(() => {
-   loadFlavors()
- }, [])
-
- // Load steps whenever a flavor is selected
- useEffect(() => {
-   if (selectedFlavor?.id) {
-     loadSteps(selectedFlavor.id)
-   } else {
-     setSteps([])
-   }
- }, [selectedFlavor])
-
- const loadFlavors = async () => {
-   const { data, error } = await supabase
-     .from('humor_flavors')
-     .select('*')
-     .order('slug', { ascending: true })
-
-   if (!error && data) {
-     setFlavors(data)
-   }
- }
-
- const loadSteps = async (flavorId: number) => {
-   const { data, error } = await supabase
-     .from('humor_flavor_steps')
-     .select('*')
-     .eq('humor_flavor_id', flavorId)
-     .order('order_by', { ascending: true })
-
-   if (!error && data) {
-     setSteps(data)
-   }
- }
-
-
-
-// Load all flavors on mount
-
-
-
-
-  const [previewImg, setPreviewImg] = useState<string | null>(null)
-  const [previewText, setPreviewText] = useState<{ title: string; content: string } | null>(null)
-  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null)
-  const [sortAsc, setSortAsc] = useState(false)
-  const [allowedDomains, setAllowedDomains] = useState<any[]>([])
-  const domainP = usePage()
-
-
-  const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
-    setToast({ msg, type })
-    setTimeout(() => setToast(null), 3000)
+  const setMode = (m: ColorMode) => {
+    setColorMode(m)
+    localStorage.setItem('colorMode', m)
   }
 
-  const changeTab = (tab: Tab) => {
-    localStorage.setItem('adminActiveTab', tab)
-    setActiveTab(tab)
-  }
+  // ── Flavor test state ──
+  const [testFlavorId, setTestFlavorId] = useState<number | null>(null)
+  const [testImageUrl, setTestImageUrl] = useState('')
+  const [testResults, setTestResults] = useState<string[]>([])
+  const [testLoading, setTestLoading] = useState(false)
 
+  // ── Table data ──
   const [profiles, setProfiles] = useState<any[]>([])
   const [images, setImages] = useState<any[]>([])
   const [captions, setCaptions] = useState<any[]>([])
@@ -148,9 +117,15 @@ export default function Page() {
   const [llmResponses, setLlmResponses] = useState<any[]>([])
   const [llmPromptChains, setLlmPromptChains] = useState<any[]>([])
   const [whitelistedEmails, setWhitelistedEmails] = useState<any[]>([])
+  const [allowedDomains, setAllowedDomains] = useState<any[]>([])
   const [topCaption, setTopCaption] = useState<any>(null)
   const [avgLikes, setAvgLikes] = useState<number | null>(null)
   const [topFlavor, setTopFlavor] = useState<any>(null)
+
+  const [previewImg, setPreviewImg] = useState<string | null>(null)
+  const [previewText, setPreviewText] = useState<{ title: string; content: string } | null>(null)
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null)
+  const [sortAsc, setSortAsc] = useState(false)
 
   const profileP = usePage()
   const imageP = usePage()
@@ -165,12 +140,23 @@ export default function Page() {
   const llmRespP = usePage()
   const llmChainP = usePage()
   const emailP = usePage()
+  const domainP = usePage()
 
   const [modal, setModal] = useState<{ type: string; data?: any } | null>(null)
   const [formData, setFormData] = useState<any>({})
 
   const openModal = (type: string, data?: any) => { setFormData(data ?? {}); setModal({ type, data }) }
   const closeModal = () => { setModal(null); setFormData({}) }
+
+  const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ msg, type })
+    setTimeout(() => setToast(null), 3000)
+  }
+
+  const changeTab = (tab: Tab) => {
+    localStorage.setItem('adminActiveTab', tab)
+    setActiveTab(tab)
+  }
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -250,8 +236,8 @@ export default function Page() {
       fetchTable('captions', setCaptions, captionP.page, '*, images(url, image_description)'),
       fetchTable('caption_examples', setCaptionExamples, captionExP.page),
       fetchCaptionRequests(captionReqP.page),
-      fetchTable('humor_flavors', setHumorFlavors, humorFlavorP.page),
-      fetchTable('humor_flavor_steps', setHumorFlavorSteps, humorFlavorStepP.page),
+      fetchTable('humor_flavors', setHumorFlavors, humorFlavorP.page, '*', 'slug'),
+      fetchTable('humor_flavor_steps', setHumorFlavorSteps, humorFlavorStepP.page, '*', 'order_by'),
       fetchHumorFlavorMix(humorFlavorMixP.page),
       fetchTable('llm_models', setLlmModels, llmModelP.page),
       fetchTable('llm_providers', setLlmProviders, llmProviderP.page),
@@ -268,9 +254,13 @@ export default function Page() {
       const u = session?.user ?? null
       setUser(u)
       if (u) {
-        const { data, error } = await supabase.from('profiles').select('is_superadmin').eq('id', u.id).single()
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('is_superadmin, is_matrix_admin')
+          .eq('id', u.id)
+          .single()
         if (!error) {
-          const admin = data?.is_superadmin ?? false
+          const admin = (data?.is_superadmin ?? false) || (data?.is_matrix_admin ?? false)
           setIsAdmin(admin)
           if (admin) { await fetchAll(); await fetchDashboardStats() }
         } else { setIsAdmin(false) }
@@ -285,11 +275,11 @@ export default function Page() {
     if (!isAdmin) return
     fetchAll()
   }, [
-       profileP.page, imageP.page, captionP.page, captionExP.page, captionReqP.page,
-       humorFlavorP.page, humorFlavorStepP.page, humorFlavorMixP.page,
-       llmModelP.page, llmProviderP.page, llmRespP.page, llmChainP.page, emailP.page,
-       domainP.page,
-       sortAsc,
+    profileP.page, imageP.page, captionP.page, captionExP.page, captionReqP.page,
+    humorFlavorP.page, humorFlavorStepP.page, humorFlavorMixP.page,
+    llmModelP.page, llmProviderP.page, llmRespP.page, llmChainP.page, emailP.page,
+    domainP.page,
+    sortAsc,
   ])
 
   const handleDelete = async (table: string, id: any, label: string, refresh: () => void) => {
@@ -331,6 +321,38 @@ export default function Page() {
     if (error) { showToast(`❌ Upload failed: ${error.message}`, 'error'); return }
     showToast('✅ Image uploaded!', 'success')
     return supabase.storage.from('images').getPublicUrl(fileName).data.publicUrl
+  }
+
+
+
+  // ── Test flavor via REST API ──
+  const handleTestFlavor = async () => {
+    if (!testFlavorId || !testImageUrl) {
+      showToast('Please select a flavor and enter an image URL', 'error')
+      return
+    }
+    setTestLoading(true)
+    setTestResults([])
+    try {
+      const res = await fetch('https://api.almostcrackd.ai/captions/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ humor_flavor_id: testFlavorId, image_url: testImageUrl }),
+      })
+      if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`)
+      const json = await res.json()
+      const results: string[] = Array.isArray(json.captions)
+        ? json.captions
+        : Array.isArray(json.results)
+          ? json.results
+          : [JSON.stringify(json, null, 2)]
+      setTestResults(results)
+      showToast('✅ Captions generated!', 'success')
+    } catch (err: any) {
+      showToast(`❌ ${err.message}`, 'error')
+    } finally {
+      setTestLoading(false)
+    }
   }
 
   const loginWithGoogle = async () => {
@@ -382,9 +404,15 @@ export default function Page() {
         {fields.map(f => (
           <div className="modal-field" key={f.key}>
             <label className="modal-label">{f.label}</label>
-            <input className="modal-input" type={f.type ?? 'text'}
-              value={formData[f.key] ?? ''}
-              onChange={e => setFormData((prev: any) => ({ ...prev, [f.key]: e.target.value }))} />
+            {f.type === 'textarea' ? (
+              <textarea className="modal-input modal-textarea" rows={4}
+                value={formData[f.key] ?? ''}
+                onChange={e => setFormData((prev: any) => ({ ...prev, [f.key]: e.target.value }))} />
+            ) : (
+              <input className="modal-input" type={f.type ?? 'text'}
+                value={formData[f.key] ?? ''}
+                onChange={e => setFormData((prev: any) => ({ ...prev, [f.key]: e.target.value }))} />
+            )}
           </div>
         ))}
         <div className="modal-actions">
@@ -525,14 +553,14 @@ export default function Page() {
             ) : (
               <div key={group} className="nav-tab-group">
                 <button className={`nav-tab-btn${activeGroup === group ? ' active' : ''}`}
-                  onClick={() => setOpenGroup(prev => prev === group ? null : group)}>
+                  onClick={() => setOpenGroup(prev => prev === group ? null : group as NavGroup)}>
                   {label} {openGroup === group ? '▴' : '▾'}
                 </button>
                 {openGroup === group && (
                   <div className="dropdown">
                     {tabs.map(({ tab, label: tabLabel }) => (
                       <button key={tab} className={`dropdown-item${activeTab === tab ? ' active' : ''}`}
-                        onClick={() => { changeTab(tab); setOpenGroup(null) }}>
+                        onClick={() => { changeTab(tab as Tab); setOpenGroup(null) }}>
                         {tabLabel}
                       </button>
                     ))}
@@ -543,6 +571,19 @@ export default function Page() {
           )}
         </div>
         <div className="nav-right">
+          {/* ── Color mode toggle ── */}
+          <div className="mode-toggle">
+            {(['light', 'system', 'dark'] as ColorMode[]).map(m => (
+              <button
+                key={m}
+                className={`mode-btn${colorMode === m ? ' active' : ''}`}
+                onClick={() => setMode(m)}
+                title={m.charAt(0).toUpperCase() + m.slice(1) + ' mode'}
+              >
+                {m === 'light' ? '☀️' : m === 'dark' ? '🌙' : '💻'}
+              </button>
+            ))}
+          </div>
           <div className="nav-avatar">{initials}</div>
           <div className="nav-user-info">
             <div className="nav-user-name">{user.user_metadata?.full_name ?? 'User'}</div>
@@ -555,10 +596,8 @@ export default function Page() {
       <div className="content">
 
         {activeTab === 'prompt_chain_tool' && (
-            <PromptChainTool />
-          )}
-
-
+          <PromptChainTool />
+        )}
 
         {activeTab === 'profiles' && (
           <div className="card">
@@ -589,77 +628,6 @@ export default function Page() {
             <Pagination pager={profileP} data={profiles} />
           </div>
         )}
-
-        {activeTab === 'whitelisted_emails' && (
-          <div className="card">
-            <div className="section-header">
-              <h2 className="section-title" style={{ margin: 0 }}>Whitelisted Emails</h2>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <SortToggle />
-                <button className="btn-add" onClick={() => openModal('whitelisted_emails')}>+ Add</button>
-              </div>
-            </div>
-            <div className="table-wrapper">
-              <table className="table">
-                <thead><tr>{['ID', 'Email', 'Created By', 'Modified By', 'Created', 'Modified', 'Actions'].map(h => <th key={h} className="th">{h}</th>)}</tr></thead>
-                <tbody>
-                  {whitelistedEmails.map(e => (
-                    <tr key={e.id}>
-                      <td className="td">{e.id}</td>
-                      <TextCell value={e.email_address} title="Email Address" />
-                      <TextCell value={e.created_by_user_id} title="Created By User ID" />
-                      <TextCell value={e.modified_by_user_id} title="Modified By User ID" />
-                      <td className="td">{e.created_datetime_utc ? new Date(e.created_datetime_utc).toLocaleString() : '—'}</td>
-                      <td className="td">{e.modified_datetime_utc ? new Date(e.modified_datetime_utc).toLocaleString() : '—'}</td>
-                      <td className="td">
-                        <button className="btn-edit" onClick={() => openModal('whitelisted_emails', e)}>Edit</button>
-                        <button className="btn-delete" onClick={() => handleDelete('whitelist_email_addresses', e.id, 'email', () => fetchTable('whitelist_email_addresses', setWhitelistedEmails, emailP.page))}>Delete</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pagination pager={emailP} data={whitelistedEmails} />
-          </div>
-        )}
-
-        {activeTab === 'allowed_signup_domains' && (
-          <div className="card">
-            <div className="section-header">
-              <h2 className="section-title" style={{ margin: 0 }}>Allowed Signup Domains</h2>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <SortToggle />
-                <button className="btn-add" onClick={() => openModal('allowed_signup_domains')}>+ Add</button>
-              </div>
-            </div>
-            <div className="table-wrapper">
-              <table className="table">
-                <thead>
-                  <tr>{['ID', 'Domain', 'Created By', 'Modified By', 'Created', 'Modified', 'Actions'].map(h => <th key={h} className="th">{h}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {allowedDomains.map(d => (
-                    <tr key={d.id}>
-                      <td className="td">{d.id}</td>
-                      <td className="td">{d.apex_domain ?? '—'}</td>
-                      <TextCell value={d.created_by_user_id} title="Created By User ID" />
-                      <TextCell value={d.modified_by_user_id} title="Modified By User ID" />
-                      <td className="td">{d.created_datetime_utc ? new Date(d.created_datetime_utc).toLocaleString() : '—'}</td>
-                      <td className="td">{d.modified_datetime_utc ? new Date(d.modified_datetime_utc).toLocaleString() : '—'}</td>
-                      <td className="td">
-                        <button className="btn-edit" onClick={() => openModal('allowed_signup_domains', d)}>Edit</button>
-                        <button className="btn-delete" onClick={() => handleDelete('allowed_signup_domains', d.id, 'domain', () => fetchTable('allowed_signup_domains', setAllowedDomains, domainP.page))}>Delete</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pagination pager={domainP} data={allowedDomains} />
-          </div>
-        )}
-
 
         {activeTab === 'images' && (
           <div className="card">
@@ -796,43 +764,109 @@ export default function Page() {
           </div>
         )}
 
+        {/* ════════════════════════════════════════
+            HUMOR FLAVORS — full CRUD + test panel
+        ════════════════════════════════════════ */}
         {activeTab === 'humor_flavors' && (
-          <div className="card">
-            <div className="section-header">
-              <h2 className="section-title" style={{ margin: 0 }}>Humor Flavors</h2>
-              <SortToggle />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <div className="card">
+              <div className="section-header">
+                <h2 className="section-title" style={{ margin: 0 }}>Humor Flavors</h2>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <SortToggle />
+                  <button className="btn-add" onClick={() => openModal('humor_flavor_new')}>+ Add Flavor</button>
+                </div>
+              </div>
+              <div className="table-wrapper">
+                <table className="table">
+                  <thead><tr>{['ID', 'Slug', 'Description', 'Created By', 'Modified By', 'Created', 'Modified', 'Actions'].map(h => <th key={h} className="th">{h}</th>)}</tr></thead>
+                  <tbody>
+                    {humorFlavors.map(hf => (
+                      <tr key={hf.id}>
+                        <td className="td">{hf.id}</td>
+                        <td className="td">{hf.slug ?? '—'}</td>
+                        <TextCell value={hf.description} title="Description" />
+                        <TextCell value={hf.created_by_user_id} title="Created By" />
+                        <TextCell value={hf.modified_by_user_id} title="Modified By" />
+                        <td className="td">{hf.created_datetime_utc ? new Date(hf.created_datetime_utc).toLocaleString() : '—'}</td>
+                        <td className="td">{hf.modified_datetime_utc ? new Date(hf.modified_datetime_utc).toLocaleString() : '—'}</td>
+                        <td className="td">
+                          <button className="btn-edit" onClick={() => openModal('humor_flavor_edit', hf)}>Edit</button>
+                          <button className="btn-delete" onClick={() => handleDelete('humor_flavors', hf.id, 'humor flavor', () => fetchTable('humor_flavors', setHumorFlavors, humorFlavorP.page, '*', 'slug'))}>Delete</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pagination pager={humorFlavorP} data={humorFlavors} />
             </div>
-            <div className="table-wrapper">
-              <table className="table">
-                <thead><tr>{['ID', 'Slug', 'Description', 'Created By', 'Modified By', 'Created', 'Modified'].map(h => <th key={h} className="th">{h}</th>)}</tr></thead>
-                <tbody>
-                  {humorFlavors.map(hf => (
-                    <tr key={hf.id}>
-                      <td className="td">{hf.id}</td>
-                      <td className="td">{hf.slug ?? '—'}</td>
-                      <TextCell value={hf.description} title="Description" />
-                      <TextCell value={hf.created_by_user_id} title="Created By" />
-                      <TextCell value={hf.modified_by_user_id} title="Modified By" />
-                      <td className="td">{hf.created_datetime_utc ? new Date(hf.created_datetime_utc).toLocaleString() : '—'}</td>
-                      <td className="td">{hf.modified_datetime_utc ? new Date(hf.modified_datetime_utc).toLocaleString() : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+            {/* ── Test Flavor Panel ── */}
+            <div className="card">
+              <h2 className="section-title">🧪 Test a Humor Flavor</h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxWidth: '560px' }}>
+                <div className="modal-field">
+                  <label className="modal-label">Select Flavor</label>
+                  <select
+                    className="modal-input"
+                    value={testFlavorId ?? ''}
+                    onChange={e => setTestFlavorId(Number(e.target.value) || null)}
+                  >
+                    <option value="">— choose a flavor —</option>
+                    {humorFlavors.map(hf => (
+                      <option key={hf.id} value={hf.id}>{hf.slug} (ID: {hf.id})</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="modal-field">
+                  <label className="modal-label">Image URL</label>
+                  <input
+                    className="modal-input"
+                    type="url"
+                    placeholder="https://..."
+                    value={testImageUrl}
+                    onChange={e => setTestImageUrl(e.target.value)}
+                  />
+                </div>
+                <button
+                  className="btn-primary"
+                  style={{ width: 'fit-content' }}
+                  onClick={handleTestFlavor}
+                  disabled={testLoading}
+                >
+                  {testLoading ? 'Generating…' : '▶ Generate Captions'}
+                </button>
+                {testResults.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                    <div className="modal-label">Results</div>
+                    {testResults.map((cap, i) => (
+                      <div key={i} className="preview-text-body" style={{ padding: '10px 14px', fontSize: '13px' }}>
+                        <strong>{i + 1}.</strong> {cap}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-            <Pagination pager={humorFlavorP} data={humorFlavors} />
           </div>
         )}
 
+        {/* ════════════════════════════════════════
+            HUMOR FLAVOR STEPS — CRUD + reorder
+        ════════════════════════════════════════ */}
         {activeTab === 'humor_flavor_steps' && (
           <div className="card">
             <div className="section-header">
               <h2 className="section-title" style={{ margin: 0 }}>Humor Flavor Steps</h2>
-              <SortToggle />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <SortToggle />
+                <button className="btn-add" onClick={() => openModal('humor_flavor_step_new')}>+ Add Step</button>
+              </div>
             </div>
             <div className="table-wrapper">
               <table className="table">
-                <thead><tr>{['ID', 'Flavor ID', 'Order', 'LLM Model', 'System Prompt', 'User Prompt', 'Description', 'Created By', 'Modified By', 'Created', 'Modified'].map(h => <th key={h} className="th">{h}</th>)}</tr></thead>
+                <thead><tr>{['ID', 'Flavor ID', 'Order', 'LLM Model', 'System Prompt', 'User Prompt', 'Description', 'Created By', 'Modified By', 'Created', 'Modified', 'Actions'].map(h => <th key={h} className="th">{h}</th>)}</tr></thead>
                 <tbody>
                   {humorFlavorSteps.map(s => (
                     <tr key={s.id}>
@@ -847,6 +881,11 @@ export default function Page() {
                       <TextCell value={s.modified_by_user_id} title="Modified By" />
                       <td className="td">{s.created_datetime_utc ? new Date(s.created_datetime_utc).toLocaleString() : '—'}</td>
                       <td className="td">{s.modified_datetime_utc ? new Date(s.modified_datetime_utc).toLocaleString() : '—'}</td>
+                      <td className="td" style={{ whiteSpace: 'nowrap' }}>
+
+                        <button className="btn-edit" onClick={() => openModal('humor_flavor_step_edit', s)}>Edit</button>
+                        <button className="btn-delete" onClick={() => handleDelete('humor_flavor_steps', s.id, 'step', () => fetchTable('humor_flavor_steps', setHumorFlavorSteps, humorFlavorStepP.page, '*', 'order_by'))}>Delete</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1031,6 +1070,8 @@ export default function Page() {
 
       </div>
 
+      {/* ════ MODALS ════ */}
+
       {modal?.type === 'image_new' && (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -1084,6 +1125,66 @@ export default function Page() {
           refresh={() => fetchTable('caption_examples', setCaptionExamples, captionExP.page)} />
       )}
 
+      {/* ── Humor Flavor Create ── */}
+      {modal?.type === 'humor_flavor_new' && (
+        <FormModal
+          title="Create Humor Flavor"
+          table="humor_flavors"
+          fields={[
+            { key: 'slug', label: 'Slug (e.g. dry-wit)' },
+            { key: 'description', label: 'Description', type: 'textarea' },
+          ]}
+          refresh={() => fetchTable('humor_flavors', setHumorFlavors, humorFlavorP.page, '*', 'slug')}
+        />
+      )}
+
+      {/* ── Humor Flavor Edit ── */}
+      {modal?.type === 'humor_flavor_edit' && (
+        <FormModal
+          title="Edit Humor Flavor"
+          table="humor_flavors"
+          fields={[
+            { key: 'slug', label: 'Slug' },
+            { key: 'description', label: 'Description', type: 'textarea' },
+          ]}
+          refresh={() => fetchTable('humor_flavors', setHumorFlavors, humorFlavorP.page, '*', 'slug')}
+        />
+      )}
+
+      {/* ── Humor Flavor Step Create ── */}
+      {modal?.type === 'humor_flavor_step_new' && (
+        <FormModal
+          title="Create Flavor Step"
+          table="humor_flavor_steps"
+          fields={[
+            { key: 'humor_flavor_id', label: 'Humor Flavor ID', type: 'number' },
+            { key: 'order_by', label: 'Order (e.g. 1)', type: 'number' },
+            { key: 'llm_model_id', label: 'LLM Model ID', type: 'number' },
+            { key: 'description', label: 'Step Description' },
+            { key: 'llm_system_prompt', label: 'System Prompt', type: 'textarea' },
+            { key: 'llm_user_prompt', label: 'User Prompt', type: 'textarea' },
+          ]}
+          refresh={() => fetchTable('humor_flavor_steps', setHumorFlavorSteps, humorFlavorStepP.page, '*', 'order_by')}
+        />
+      )}
+
+      {/* ── Humor Flavor Step Edit ── */}
+      {modal?.type === 'humor_flavor_step_edit' && (
+        <FormModal
+          title="Edit Flavor Step"
+          table="humor_flavor_steps"
+          fields={[
+            { key: 'humor_flavor_id', label: 'Humor Flavor ID', type: 'number' },
+            { key: 'order_by', label: 'Order', type: 'number' },
+            { key: 'llm_model_id', label: 'LLM Model ID', type: 'number' },
+            { key: 'description', label: 'Step Description' },
+            { key: 'llm_system_prompt', label: 'System Prompt', type: 'textarea' },
+            { key: 'llm_user_prompt', label: 'User Prompt', type: 'textarea' },
+          ]}
+          refresh={() => fetchTable('humor_flavor_steps', setHumorFlavorSteps, humorFlavorStepP.page, '*', 'order_by')}
+        />
+      )}
+
       {modal?.type === 'llm_models' && (
         <FormModal title={modal.data?.id ? 'Edit LLM Model' : 'Add LLM Model'} table="llm_models"
           fields={[
@@ -1105,12 +1206,11 @@ export default function Page() {
           refresh={() => fetchTable('whitelist_email_addresses', setWhitelistedEmails, emailP.page)} />
       )}
 
-    {modal?.type === 'allowed_signup_domains' && (
-      <FormModal title={modal.data?.id ? 'Edit Domain' : 'Add Domain'} table="allowed_signup_domains"
-        fields={[{ key: 'apex_domain', label: 'Domain (e.g. example.com)' }]}
-        refresh={() => fetchTable('allowed_signup_domains', setAllowedDomains, domainP.page)} />
-    )}
-
+      {modal?.type === 'allowed_signup_domains' && (
+        <FormModal title={modal.data?.id ? 'Edit Domain' : 'Add Domain'} table="allowed_signup_domains"
+          fields={[{ key: 'apex_domain', label: 'Domain (e.g. example.com)' }]}
+          refresh={() => fetchTable('allowed_signup_domains', setAllowedDomains, domainP.page)} />
+      )}
 
       {modal?.type === 'humor_flavor_mix' && (
         <FormModal title={modal.data?.id ? 'Edit Humor Flavor Mix' : 'Add Humor Flavor Mix'} table="humor_flavor_mix"
@@ -1120,6 +1220,7 @@ export default function Page() {
           ]}
           refresh={() => fetchHumorFlavorMix(humorFlavorMixP.page)} />
       )}
+
     </div>
   )
 }
