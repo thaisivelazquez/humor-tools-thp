@@ -435,13 +435,11 @@ export default function Page() {
     </td>
   )
 
-  const activeGroup: NavGroup =
-    ['profiles', 'whitelisted_emails', 'allowed_signup_domains'].includes(activeTab) ? 'profiles' :
-    ['captions', 'caption_examples', 'caption_requests'].includes(activeTab) ? 'captions' :
-    ['humor_flavors', 'humor_flavor_steps', 'humor_flavor_mix'].includes(activeTab) ? 'humor' :
-    ['llm_models', 'llm_providers', 'llm_responses', 'llm_prompt_chains'].includes(activeTab) ? 'llm' :
-    activeTab as NavGroup
-
+const activeGroup: NavGroup =
+  (['captions', 'caption_examples', 'caption_requests'] as string[]).includes(activeTab) ? 'captions' :
+  (['humor_flavors', 'humor_flavor_steps', 'humor_flavor_mix'] as string[]).includes(activeTab) ? 'humor' :
+  (['llm_models', 'llm_providers', 'llm_responses', 'llm_prompt_chains'] as string[]).includes(activeTab) ? 'llm' :
+  activeTab as NavGroup
   if (!user) {
     return (
       <div className="login-wrapper">
