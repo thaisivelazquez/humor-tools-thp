@@ -512,23 +512,53 @@ export default function PromptChainTool() {
 
       const res = await fetch('https://api.almostcrackd.ai/pipeline/generate-captions', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageId: uploadedImageId, humorFlavorId: selectedFlavor.id })
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          imageId: uploadedImageId,
+          humorFlavorId: selectedFlavor.id
+        })
       })
 
-      if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`)
-      const json = await res.json()
+      // ALWAYS read as text first
+      const text = await res.text()
 
+      if (!res.ok) {
+        throw new Error(`API ${res.status}: ${text}`)
+      }
+
+      // Safely parse JSON
+      let json: any
+      try {
+        json = JSON.parse(text)
+      } catch {
+        throw new Error(`Invalid JSON response: ${text}`)
+      }
+
+      // Normalize captions
       const captions: string[] = Array.isArray(json)
         ? json.map((c: any) => c.caption || c.content || c.text || String(c))
         : Array.isArray(json.captions)
-          ? json.captions.map((c: any) => typeof c === 'string' ? c : c.caption || c.content || c.text || String(c))
+          ? json.captions.map((c: any) =>
+              typeof c === 'string'
+                ? c
+                : c.caption || c.content || c.text || String(c)
+            )
           : Array.isArray(json.results)
-            ? json.results.map((c: any) => typeof c === 'string' ? c : c.caption || c.content || String(c))
+            ? json.results.map((c: any) =>
+                typeof c === 'string'
+                  ? c
+                  : c.caption || c.content || String(c)
+              )
             : [JSON.stringify(json, null, 2)]
 
       setTestResults(captions)
-      showToast(`${captions.length} caption${captions.length !== 1 ? 's' : ''} generated!`, 'success')
+      showToast(
+        `${captions.length} caption${captions.length !== 1 ? 's' : ''} generated!`,
+        'success'
+      )
     } catch (err: any) {
       setTestError(err.message)
       showToast('Generation failed', 'error')
