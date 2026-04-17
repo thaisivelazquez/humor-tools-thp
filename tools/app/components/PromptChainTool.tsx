@@ -80,6 +80,12 @@ export default function PromptChainTool() {
   const [flavorDesc, setFlavorDesc] = useState('')
   const [savingFlavor, setSavingFlavor] = useState(false)
 
+  // Duplicate flavor modal
+  const [duplicateModal, setDuplicateModal] = useState<{ open: boolean; source?: HumorFlavor }>({ open: false })
+  const [duplicateSlug, setDuplicateSlug] = useState('')
+  const [duplicateDesc, setDuplicateDesc] = useState('')
+  const [duplicating, setDuplicating] = useState(false)
+
   // Step modal
   const [stepModal, setStepModal] = useState<{ open: boolean; editing?: FlavorStep }>({ open: false })
   const [stepDesc, setStepDesc] = useState('')
@@ -112,6 +118,9 @@ export default function PromptChainTool() {
   // Delete confirm
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'flavor' | 'step'; id: number; label: string } | null>(null)
 
+  const [uploadedImageId, setUploadedImageId] = useState<string | null>(null)
+  const [uploadProgress, setUploadProgress] = useState(0)
+
   useEffect(() => {
     try {
       const saved = localStorage.getItem('pct-colorMode') as ColorMode | null
@@ -139,9 +148,6 @@ export default function PromptChainTool() {
     setToast({ msg, type })
     toastTimer.current = setTimeout(() => setToast(null), 3500)
   }
-
-  const [uploadedImageId, setUploadedImageId] = useState<string | null>(null)
-  const [uploadProgress, setUploadProgress] = useState(0)
 
   const handleImageUpload = async (file: File) => {
     setUploading(true)
@@ -354,6 +360,77 @@ export default function PromptChainTool() {
     await loadFlavors()
   }
 
+  const openDuplicateFlavor = (f: HumorFlavor) => {
+    setDuplicateSlug(f.slug + '-copy')
+    setDuplicateDesc(f.description || '')
+    setDuplicateModal({ open: true, source: f })
+  }
+
+  const duplicateFlavor = async () => {
+    if (!duplicateSlug.trim()) {
+      showToast('Slug is required', 'error')
+      return
+    }
+    if (!duplicateModal.source) return
+
+    setDuplicating(true)
+
+    try {
+      // 1. Create the new flavor
+      const { data: newFlavor, error: flavorErr } = await supabase
+        .from('humor_flavors')
+        .insert({ slug: duplicateSlug.trim(), description: duplicateDesc.trim() || null })
+        .select()
+        .single()
+
+      if (flavorErr || !newFlavor) {
+        showToast('Failed to create flavor: ' + flavorErr?.message, 'error')
+        return
+      }
+
+      // 2. Fetch source steps
+      const { data: sourceSteps, error: stepsErr } = await supabase
+        .from('humor_flavor_steps')
+        .select('*')
+        .eq('humor_flavor_id', duplicateModal.source.id)
+        .order('order_by', { ascending: true })
+
+      if (stepsErr) {
+        showToast('Flavor created but failed to copy steps: ' + stepsErr.message, 'error')
+        setDuplicateModal({ open: false })
+        await loadFlavors()
+        return
+      }
+
+      // 3. Insert duplicated steps with new flavor id (strip old id so DB generates new PKs)
+      if (sourceSteps && sourceSteps.length > 0) {
+        const newSteps = sourceSteps.map(({ id, humor_flavor_id, ...rest }: FlavorStep) => ({
+          ...rest,
+          humor_flavor_id: newFlavor.id,
+        }))
+
+        const { error: insertErr } = await supabase
+          .from('humor_flavor_steps')
+          .insert(newSteps)
+
+        if (insertErr) {
+          showToast('Flavor created but step copy failed: ' + insertErr.message, 'error')
+          setDuplicateModal({ open: false })
+          await loadFlavors()
+          return
+        }
+      }
+
+      showToast(`Duplicated "${duplicateModal.source.slug}" → "${duplicateSlug.trim()}"!`, 'success')
+      setDuplicateModal({ open: false })
+      await loadFlavors()
+    } catch (err: any) {
+      showToast('Duplication error: ' + err.message, 'error')
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   const openCreateStep = () => {
     const nextOrder = steps.length > 0
       ? Math.max(...steps.map(s => s.order_by)) + 1
@@ -522,14 +599,12 @@ export default function PromptChainTool() {
         })
       })
 
-      // ALWAYS read as text first
       const text = await res.text()
 
       if (!res.ok) {
         throw new Error(`API ${res.status}: ${text}`)
       }
 
-      // Safely parse JSON
       let json: any
       try {
         json = JSON.parse(text)
@@ -537,7 +612,6 @@ export default function PromptChainTool() {
         throw new Error(`Invalid JSON response: ${text}`)
       }
 
-      // Normalize captions
       const captions: string[] = Array.isArray(json)
         ? json.map((c: any) => c.caption || c.content || c.text || String(c))
         : Array.isArray(json.captions)
@@ -633,6 +707,46 @@ export default function PromptChainTool() {
               <button className="pct-btn pct-ghost" onClick={() => setFlavorModal({ open: false })}>Cancel</button>
               <button className="pct-btn pct-primary" onClick={saveFlavor} disabled={savingFlavor}>
                 {savingFlavor ? 'Saving…' : flavorModal.editing ? 'Save Changes' : 'Create Flavor'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {duplicateModal.open && (
+        <div className="pct-overlay" onClick={() => setDuplicateModal({ open: false })}>
+          <div className="pct-dialog pct-dialog-md" onClick={e => e.stopPropagation()}>
+            <h3 className="pct-dialog-title">Duplicate Flavor</h3>
+            <p className="pct-dialog-body" style={{ marginBottom: 16 }}>
+              Duplicating <strong>{duplicateModal.source?.slug}</strong> — all its steps will be copied.
+            </p>
+            <div className="pct-field">
+              <label className="pct-label">New Slug *</label>
+              <input
+                className="pct-input"
+                placeholder="e.g. dry-wit-v2"
+                value={duplicateSlug}
+                onChange={e => setDuplicateSlug(e.target.value)}
+                autoFocus
+              />
+              <span className="pct-hint">Must be unique — lowercase, hyphenated identifier</span>
+            </div>
+            <div className="pct-field">
+              <label className="pct-label">Description</label>
+              <textarea
+                className="pct-input pct-ta"
+                rows={3}
+                placeholder="Optional description for the new flavor…"
+                value={duplicateDesc}
+                onChange={e => setDuplicateDesc(e.target.value)}
+              />
+            </div>
+            <div className="pct-dialog-actions">
+              <button className="pct-btn pct-ghost" onClick={() => setDuplicateModal({ open: false })}>
+                Cancel
+              </button>
+              <button className="pct-btn pct-primary" onClick={duplicateFlavor} disabled={duplicating}>
+                {duplicating ? 'Duplicating…' : 'Duplicate Flavor'}
               </button>
             </div>
           </div>
@@ -839,6 +953,7 @@ export default function PromptChainTool() {
                       </div>
                       <div className="pct-flavor-btns" onClick={e => e.stopPropagation()}>
                         <button className="pct-ibtn" onClick={() => openEditFlavor(f)} title="Edit">✏️</button>
+                        <button className="pct-ibtn" onClick={() => openDuplicateFlavor(f)} title="Duplicate">📋</button>
                         <button className="pct-ibtn pct-ibtn-del" onClick={() => confirmDeleteFlavor(f)} title="Delete">🗑️</button>
                       </div>
                     </li>
