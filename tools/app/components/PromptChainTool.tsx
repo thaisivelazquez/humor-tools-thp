@@ -37,6 +37,8 @@ type ToastType = 'success' | 'error' | 'info'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
+const FLAVORS_PER_PAGE = 10
+
 const STEP_TEMPLATES = [
   {
     label: '1 · Describe image',
@@ -63,6 +65,7 @@ const STEP_TEMPLATES = [
 export default function PromptChainTool() {
   const [colorMode, setColorMode] = useState<ColorMode>('system')
   const [flavors, setFlavors] = useState<HumorFlavor[]>([])
+  const [flavorPage, setFlavorPage] = useState(1)
   const [steps, setSteps] = useState<FlavorStep[]>([])
   const [selectedFlavor, setSelectedFlavor] = useState<HumorFlavor | null>(null)
   const [loadingFlavors, setLoadingFlavors] = useState(false)
@@ -120,6 +123,13 @@ export default function PromptChainTool() {
 
   const [uploadedImageId, setUploadedImageId] = useState<string | null>(null)
   const [uploadProgress, setUploadProgress] = useState(0)
+
+  // ─── Derived pagination values ─────────────────────────────────────────────
+  const totalPages = Math.max(1, Math.ceil(flavors.length / FLAVORS_PER_PAGE))
+  const pagedFlavors = flavors.slice(
+    (flavorPage - 1) * FLAVORS_PER_PAGE,
+    flavorPage * FLAVORS_PER_PAGE
+  )
 
   useEffect(() => {
     try {
@@ -241,16 +251,11 @@ export default function PromptChainTool() {
 
   const loadSimpleIdLookup = async (tableName: string): Promise<LookupOption[]> => {
     const { data, error } = await supabase.from(tableName).select('id').order('id', { ascending: true })
-
     if (error) {
       showToast(`Failed to load ${tableName}: ${error.message}`, 'error')
       return []
     }
-
-    return (data || []).map((row: any) => ({
-      id: row.id,
-      label: `ID ${row.id}`,
-    }))
+    return (data || []).map((row: any) => ({ id: row.id, label: `ID ${row.id}` }))
   }
 
   const loadModelLookup = async (): Promise<LookupOption[]> => {
@@ -258,33 +263,25 @@ export default function PromptChainTool() {
       .from('llm_models')
       .select('id, name')
       .order('name', { ascending: true })
-
     if (error) {
       showToast(`Failed to load llm_models: ${error.message}`, 'error')
       return []
     }
-
-    return (data || []).map((row: any) => ({
-      id: row.id,
-      label: row.name || `ID ${row.id}`,
-    }))
+    return (data || []).map((row: any) => ({ id: row.id, label: row.name || `ID ${row.id}` }))
   }
 
   const loadLookups = async () => {
     setLoadingLookups(true)
-
     const [inputs, outputs, models, stepTypeRows] = await Promise.all([
       loadSimpleIdLookup('llm_input_types'),
       loadSimpleIdLookup('llm_output_types'),
       loadModelLookup(),
       loadSimpleIdLookup('humor_flavor_step_types'),
     ])
-
     setLlmInputTypes(inputs)
     setLlmOutputTypes(outputs)
     setLlmModels(models)
     setStepTypes(stepTypeRows)
-
     setLoadingLookups(false)
   }
 
@@ -316,30 +313,18 @@ export default function PromptChainTool() {
   }
 
   const saveFlavor = async () => {
-    if (!flavorSlug.trim()) {
-      showToast('Slug is required', 'error')
-      return
-    }
-
+    if (!flavorSlug.trim()) { showToast('Slug is required', 'error'); return }
     setSavingFlavor(true)
     const payload = { slug: flavorSlug.trim(), description: flavorDesc.trim() || null }
     const isEdit = !!flavorModal.editing
-
     const res = isEdit
       ? await supabase.from('humor_flavors').update(payload).eq('id', flavorModal.editing!.id)
       : await supabase.from('humor_flavors').insert(payload)
-
     setSavingFlavor(false)
-
-    if (res.error) {
-      showToast('Save failed: ' + res.error.message, 'error')
-      return
-    }
-
+    if (res.error) { showToast('Save failed: ' + res.error.message, 'error'); return }
     showToast(isEdit ? 'Flavor updated!' : 'Flavor created!', 'success')
     setFlavorModal({ open: false })
     await loadFlavors()
-
     if (isEdit && selectedFlavor?.id === flavorModal.editing!.id) {
       setSelectedFlavor(prev => prev ? { ...prev, ...payload } : prev)
     }
@@ -350,14 +335,13 @@ export default function PromptChainTool() {
 
   const deleteFlavor = async (id: number) => {
     const { error } = await supabase.from('humor_flavors').delete().eq('id', id)
-    if (error) {
-      showToast('Delete failed', 'error')
-      return
-    }
+    if (error) { showToast('Delete failed', 'error'); return }
     showToast('Flavor deleted', 'success')
     if (selectedFlavor?.id === id) setSelectedFlavor(null)
     setDeleteConfirm(null)
     await loadFlavors()
+    // Clamp page if last item on page was deleted
+    setFlavorPage(p => Math.min(p, Math.max(1, Math.ceil((flavors.length - 1) / FLAVORS_PER_PAGE))))
   }
 
   const openDuplicateFlavor = (f: HumorFlavor) => {
@@ -367,34 +351,22 @@ export default function PromptChainTool() {
   }
 
   const duplicateFlavor = async () => {
-    if (!duplicateSlug.trim()) {
-      showToast('Slug is required', 'error')
-      return
-    }
+    if (!duplicateSlug.trim()) { showToast('Slug is required', 'error'); return }
     if (!duplicateModal.source) return
-
     setDuplicating(true)
-
     try {
-      // 1. Create the new flavor
       const { data: newFlavor, error: flavorErr } = await supabase
         .from('humor_flavors')
         .insert({ slug: duplicateSlug.trim(), description: duplicateDesc.trim() || null })
         .select()
         .single()
+      if (flavorErr || !newFlavor) { showToast('Failed to create flavor: ' + flavorErr?.message, 'error'); return }
 
-      if (flavorErr || !newFlavor) {
-        showToast('Failed to create flavor: ' + flavorErr?.message, 'error')
-        return
-      }
-
-      // 2. Fetch source steps
       const { data: sourceSteps, error: stepsErr } = await supabase
         .from('humor_flavor_steps')
         .select('*')
         .eq('humor_flavor_id', duplicateModal.source.id)
         .order('order_by', { ascending: true })
-
       if (stepsErr) {
         showToast('Flavor created but failed to copy steps: ' + stepsErr.message, 'error')
         setDuplicateModal({ open: false })
@@ -402,17 +374,12 @@ export default function PromptChainTool() {
         return
       }
 
-      // 3. Insert duplicated steps with new flavor id (strip old id so DB generates new PKs)
       if (sourceSteps && sourceSteps.length > 0) {
         const newSteps = sourceSteps.map(({ id, humor_flavor_id, ...rest }: FlavorStep) => ({
           ...rest,
           humor_flavor_id: newFlavor.id,
         }))
-
-        const { error: insertErr } = await supabase
-          .from('humor_flavor_steps')
-          .insert(newSteps)
-
+        const { error: insertErr } = await supabase.from('humor_flavor_steps').insert(newSteps)
         if (insertErr) {
           showToast('Flavor created but step copy failed: ' + insertErr.message, 'error')
           setDuplicateModal({ open: false })
@@ -432,24 +399,18 @@ export default function PromptChainTool() {
   }
 
   const openCreateStep = () => {
-    const nextOrder = steps.length > 0
-      ? Math.max(...steps.map(s => s.order_by)) + 1
-      : 1
-
+    const nextOrder = steps.length > 0 ? Math.max(...steps.map(s => s.order_by)) + 1 : 1
     const templateIndex = Math.min(steps.length, STEP_TEMPLATES.length - 1)
     const tmpl = STEP_TEMPLATES[templateIndex]
-
     setStepDesc(tmpl?.description || '')
     setStepSystem(tmpl?.llm_system_prompt || '')
     setStepUser(tmpl?.llm_user_prompt || '')
     setStepOrder(String(nextOrder))
     setStepTemperature('')
-
     setStepInputTypeId(llmInputTypes[0] ? String(llmInputTypes[0].id) : '')
     setStepOutputTypeId(llmOutputTypes[0] ? String(llmOutputTypes[0].id) : '')
     setStepModelId(llmModels[0] ? String(llmModels[0].id) : '')
     setStepTypeId(stepTypes[0] ? String(stepTypes[0].id) : '')
-
     setStepModal({ open: true })
   }
 
@@ -459,12 +420,10 @@ export default function PromptChainTool() {
     setStepUser(s.llm_user_prompt || '')
     setStepOrder(String(s.order_by))
     setStepTemperature(s.llm_temperature != null ? String(s.llm_temperature) : '')
-
     setStepInputTypeId(s.llm_input_type_id != null ? String(s.llm_input_type_id) : (llmInputTypes[0] ? String(llmInputTypes[0].id) : ''))
     setStepOutputTypeId(s.llm_output_type_id != null ? String(s.llm_output_type_id) : (llmOutputTypes[0] ? String(llmOutputTypes[0].id) : ''))
     setStepModelId(s.llm_model_id != null ? String(s.llm_model_id) : (llmModels[0] ? String(llmModels[0].id) : ''))
     setStepTypeId(s.humor_flavor_step_type_id != null ? String(s.humor_flavor_step_type_id) : (stepTypes[0] ? String(stepTypes[0].id) : ''))
-
     setStepModal({ open: true, editing: s })
   }
 
@@ -475,33 +434,14 @@ export default function PromptChainTool() {
   }
 
   const saveStep = async () => {
-    if (!selectedFlavor) {
-      showToast('Please select a flavor first', 'error')
-      return
-    }
-    if (!stepInputTypeId) {
-      showToast('Please select an input type', 'error')
-      return
-    }
-    if (!stepOutputTypeId) {
-      showToast('Please select an output type', 'error')
-      return
-    }
-    if (!stepModelId) {
-      showToast('Please select an LLM model', 'error')
-      return
-    }
-    if (!stepTypeId) {
-      showToast('Please select a step type', 'error')
-      return
-    }
-    if (!stepSystem.trim() && !stepUser.trim()) {
-      showToast('Add at least one prompt', 'error')
-      return
-    }
+    if (!selectedFlavor) { showToast('Please select a flavor first', 'error'); return }
+    if (!stepInputTypeId) { showToast('Please select an input type', 'error'); return }
+    if (!stepOutputTypeId) { showToast('Please select an output type', 'error'); return }
+    if (!stepModelId) { showToast('Please select an LLM model', 'error'); return }
+    if (!stepTypeId) { showToast('Please select a step type', 'error'); return }
+    if (!stepSystem.trim() && !stepUser.trim()) { showToast('Add at least one prompt', 'error'); return }
 
     setSavingStep(true)
-
     try {
       const payload = {
         humor_flavor_id: selectedFlavor.id,
@@ -515,17 +455,11 @@ export default function PromptChainTool() {
         llm_model_id: parseInt(stepModelId, 10),
         humor_flavor_step_type_id: parseInt(stepTypeId, 10),
       }
-
       const isEdit = !!stepModal.editing
       const res = isEdit
         ? await supabase.from('humor_flavor_steps').update(payload).eq('id', stepModal.editing!.id)
         : await supabase.from('humor_flavor_steps').insert(payload)
-
-      if (res.error) {
-        showToast('Save failed: ' + res.error.message, 'error')
-        return
-      }
-
+      if (res.error) { showToast('Save failed: ' + res.error.message, 'error'); return }
       showToast(isEdit ? 'Step updated!' : 'Step added!', 'success')
       setStepModal({ open: false })
       await loadSteps(selectedFlavor.id)
@@ -542,10 +476,7 @@ export default function PromptChainTool() {
   const deleteStep = async (id: number) => {
     if (!selectedFlavor) return
     const { error } = await supabase.from('humor_flavor_steps').delete().eq('id', id)
-    if (error) {
-      showToast('Delete failed', 'error')
-      return
-    }
+    if (error) { showToast('Delete failed', 'error'); return }
     showToast('Step deleted', 'success')
     setDeleteConfirm(null)
     await loadSteps(selectedFlavor.id)
@@ -558,25 +489,17 @@ export default function PromptChainTool() {
     const swapIdx = dir === 'up' ? idx - 1 : idx + 1
     if (swapIdx < 0 || swapIdx >= sorted.length) return
     const other = sorted[swapIdx]
-
     await Promise.all([
       supabase.from('humor_flavor_steps').update({ order_by: other.order_by }).eq('id', s.id),
       supabase.from('humor_flavor_steps').update({ order_by: s.order_by }).eq('id', other.id),
     ])
-
     await loadSteps(selectedFlavor.id)
   }
 
   const runChain = async () => {
     if (!selectedFlavor) return
-    if (!uploadedImageId) {
-      showToast('Upload an image first', 'error')
-      return
-    }
-    if (steps.length === 0) {
-      showToast('Add steps first', 'error')
-      return
-    }
+    if (!uploadedImageId) { showToast('Upload an image first', 'error'); return }
+    if (steps.length === 0) { showToast('Add steps first', 'error'); return }
 
     setTestRunning(true)
     setTestResults([])
@@ -589,50 +512,26 @@ export default function PromptChainTool() {
 
       const res = await fetch('https://api.almostcrackd.ai/pipeline/generate-captions', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          imageId: uploadedImageId,
-          humorFlavorId: selectedFlavor.id
-        })
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageId: uploadedImageId, humorFlavorId: selectedFlavor.id })
       })
 
       const text = await res.text()
-
-      if (!res.ok) {
-        throw new Error(`API ${res.status}: ${text}`)
-      }
+      if (!res.ok) throw new Error(`API ${res.status}: ${text}`)
 
       let json: any
-      try {
-        json = JSON.parse(text)
-      } catch {
-        throw new Error(`Invalid JSON response: ${text}`)
-      }
+      try { json = JSON.parse(text) } catch { throw new Error(`Invalid JSON response: ${text}`) }
 
       const captions: string[] = Array.isArray(json)
         ? json.map((c: any) => c.caption || c.content || c.text || String(c))
         : Array.isArray(json.captions)
-          ? json.captions.map((c: any) =>
-              typeof c === 'string'
-                ? c
-                : c.caption || c.content || c.text || String(c)
-            )
+          ? json.captions.map((c: any) => typeof c === 'string' ? c : c.caption || c.content || c.text || String(c))
           : Array.isArray(json.results)
-            ? json.results.map((c: any) =>
-                typeof c === 'string'
-                  ? c
-                  : c.caption || c.content || String(c)
-              )
+            ? json.results.map((c: any) => typeof c === 'string' ? c : c.caption || c.content || String(c))
             : [JSON.stringify(json, null, 2)]
 
       setTestResults(captions)
-      showToast(
-        `${captions.length} caption${captions.length !== 1 ? 's' : ''} generated!`,
-        'success'
-      )
+      showToast(`${captions.length} caption${captions.length !== 1 ? 's' : ''} generated!`, 'success')
     } catch (err: any) {
       setTestError(err.message)
       showToast('Generation failed', 'error')
@@ -642,7 +541,6 @@ export default function PromptChainTool() {
   }
 
   const sortedSteps = [...steps].sort((a, b) => a.order_by - b.order_by)
-
   const getLabel = (items: LookupOption[], id?: number) =>
     items.find(x => x.id === id)?.label || (id != null ? `ID ${id}` : '')
 
@@ -659,20 +557,13 @@ export default function PromptChainTool() {
           <div className="pct-dialog" onClick={e => e.stopPropagation()}>
             <div className="pct-dialog-icon">🗑️</div>
             <h3 className="pct-dialog-title">Delete {deleteConfirm.type === 'flavor' ? 'Flavor' : 'Step'}?</h3>
-            <p className="pct-dialog-body">
-              <strong>{deleteConfirm.label}</strong> will be permanently removed.
-            </p>
+            <p className="pct-dialog-body"><strong>{deleteConfirm.label}</strong> will be permanently removed.</p>
             <div className="pct-dialog-actions">
               <button className="pct-btn pct-ghost" onClick={() => setDeleteConfirm(null)}>Cancel</button>
-              <button
-                className="pct-btn pct-danger"
-                onClick={() => {
-                  if (deleteConfirm.type === 'flavor') deleteFlavor(deleteConfirm.id)
-                  else deleteStep(deleteConfirm.id)
-                }}
-              >
-                Delete
-              </button>
+              <button className="pct-btn pct-danger" onClick={() => {
+                if (deleteConfirm.type === 'flavor') deleteFlavor(deleteConfirm.id)
+                else deleteStep(deleteConfirm.id)
+              }}>Delete</button>
             </div>
           </div>
         </div>
@@ -684,24 +575,12 @@ export default function PromptChainTool() {
             <h3 className="pct-dialog-title">{flavorModal.editing ? 'Edit Flavor' : 'New Humor Flavor'}</h3>
             <div className="pct-field">
               <label className="pct-label">Slug *</label>
-              <input
-                className="pct-input"
-                placeholder="e.g. dry-wit, dad-jokes"
-                value={flavorSlug}
-                onChange={e => setFlavorSlug(e.target.value)}
-                autoFocus
-              />
+              <input className="pct-input" placeholder="e.g. dry-wit, dad-jokes" value={flavorSlug} onChange={e => setFlavorSlug(e.target.value)} autoFocus />
               <span className="pct-hint">Lowercase, hyphenated identifier</span>
             </div>
             <div className="pct-field">
               <label className="pct-label">Description</label>
-              <textarea
-                className="pct-input pct-ta"
-                rows={3}
-                placeholder="What makes this flavor unique…"
-                value={flavorDesc}
-                onChange={e => setFlavorDesc(e.target.value)}
-              />
+              <textarea className="pct-input pct-ta" rows={3} placeholder="What makes this flavor unique…" value={flavorDesc} onChange={e => setFlavorDesc(e.target.value)} />
             </div>
             <div className="pct-dialog-actions">
               <button className="pct-btn pct-ghost" onClick={() => setFlavorModal({ open: false })}>Cancel</button>
@@ -722,29 +601,15 @@ export default function PromptChainTool() {
             </p>
             <div className="pct-field">
               <label className="pct-label">New Slug *</label>
-              <input
-                className="pct-input"
-                placeholder="e.g. dry-wit-v2"
-                value={duplicateSlug}
-                onChange={e => setDuplicateSlug(e.target.value)}
-                autoFocus
-              />
+              <input className="pct-input" placeholder="e.g. dry-wit-v2" value={duplicateSlug} onChange={e => setDuplicateSlug(e.target.value)} autoFocus />
               <span className="pct-hint">Must be unique — lowercase, hyphenated identifier</span>
             </div>
             <div className="pct-field">
               <label className="pct-label">Description</label>
-              <textarea
-                className="pct-input pct-ta"
-                rows={3}
-                placeholder="Optional description for the new flavor…"
-                value={duplicateDesc}
-                onChange={e => setDuplicateDesc(e.target.value)}
-              />
+              <textarea className="pct-input pct-ta" rows={3} placeholder="Optional description for the new flavor…" value={duplicateDesc} onChange={e => setDuplicateDesc(e.target.value)} />
             </div>
             <div className="pct-dialog-actions">
-              <button className="pct-btn pct-ghost" onClick={() => setDuplicateModal({ open: false })}>
-                Cancel
-              </button>
+              <button className="pct-btn pct-ghost" onClick={() => setDuplicateModal({ open: false })}>Cancel</button>
               <button className="pct-btn pct-primary" onClick={duplicateFlavor} disabled={duplicating}>
                 {duplicating ? 'Duplicating…' : 'Duplicate Flavor'}
               </button>
@@ -763,14 +628,7 @@ export default function PromptChainTool() {
                 <label className="pct-label">Quick Templates</label>
                 <div className="pct-templates">
                   {STEP_TEMPLATES.map(t => (
-                    <button
-                      key={t.label}
-                      type="button"
-                      className="pct-tpl-btn"
-                      onClick={() => applyTemplate(t)}
-                    >
-                      {t.label}
-                    </button>
+                    <button key={t.label} type="button" className="pct-tpl-btn" onClick={() => applyTemplate(t)}>{t.label}</button>
                   ))}
                 </div>
               </div>
@@ -779,58 +637,27 @@ export default function PromptChainTool() {
             <div className="pct-row">
               <div className="pct-field" style={{ width: 80 }}>
                 <label className="pct-label">Order</label>
-                <input
-                  className="pct-input"
-                  type="number"
-                  min={1}
-                  value={stepOrder}
-                  onChange={e => setStepOrder(e.target.value)}
-                />
+                <input className="pct-input" type="number" min={1} value={stepOrder} onChange={e => setStepOrder(e.target.value)} />
               </div>
-
               <div className="pct-field" style={{ flex: 1 }}>
                 <label className="pct-label">Temperature</label>
-                <input
-                  className="pct-input"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="2"
-                  placeholder="Optional"
-                  value={stepTemperature}
-                  onChange={e => setStepTemperature(e.target.value)}
-                />
+                <input className="pct-input" type="number" step="0.1" min="0" max="2" placeholder="Optional" value={stepTemperature} onChange={e => setStepTemperature(e.target.value)} />
               </div>
             </div>
 
             <div className="pct-row">
               <div className="pct-field" style={{ flex: 1 }}>
                 <label className="pct-label">Input Type *</label>
-                <select
-                  className="pct-input"
-                  value={stepInputTypeId}
-                  onChange={e => setStepInputTypeId(e.target.value)}
-                  disabled={loadingLookups}
-                >
+                <select className="pct-input" value={stepInputTypeId} onChange={e => setStepInputTypeId(e.target.value)} disabled={loadingLookups}>
                   <option value="">{loadingLookups ? 'Loading...' : 'Select input type'}</option>
-                  {llmInputTypes.map(item => (
-                    <option key={item.id} value={item.id}>{item.label}</option>
-                  ))}
+                  {llmInputTypes.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
                 </select>
               </div>
-
               <div className="pct-field" style={{ flex: 1 }}>
                 <label className="pct-label">Output Type *</label>
-                <select
-                  className="pct-input"
-                  value={stepOutputTypeId}
-                  onChange={e => setStepOutputTypeId(e.target.value)}
-                  disabled={loadingLookups}
-                >
+                <select className="pct-input" value={stepOutputTypeId} onChange={e => setStepOutputTypeId(e.target.value)} disabled={loadingLookups}>
                   <option value="">{loadingLookups ? 'Loading...' : 'Select output type'}</option>
-                  {llmOutputTypes.map(item => (
-                    <option key={item.id} value={item.id}>{item.label}</option>
-                  ))}
+                  {llmOutputTypes.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
                 </select>
               </div>
             </div>
@@ -838,68 +665,34 @@ export default function PromptChainTool() {
             <div className="pct-row">
               <div className="pct-field" style={{ flex: 1 }}>
                 <label className="pct-label">LLM Model *</label>
-                <select
-                  className="pct-input"
-                  value={stepModelId}
-                  onChange={e => setStepModelId(e.target.value)}
-                  disabled={loadingLookups}
-                >
+                <select className="pct-input" value={stepModelId} onChange={e => setStepModelId(e.target.value)} disabled={loadingLookups}>
                   <option value="">{loadingLookups ? 'Loading...' : 'Select model'}</option>
-                  {llmModels.map(item => (
-                    <option key={item.id} value={item.id}>{item.label}</option>
-                  ))}
+                  {llmModels.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
                 </select>
               </div>
-
               <div className="pct-field" style={{ flex: 1 }}>
                 <label className="pct-label">Step Type *</label>
-                <select
-                  className="pct-input"
-                  value={stepTypeId}
-                  onChange={e => setStepTypeId(e.target.value)}
-                  disabled={loadingLookups}
-                >
+                <select className="pct-input" value={stepTypeId} onChange={e => setStepTypeId(e.target.value)} disabled={loadingLookups}>
                   <option value="">{loadingLookups ? 'Loading...' : 'Select step type'}</option>
-                  {stepTypes.map(item => (
-                    <option key={item.id} value={item.id}>{item.label}</option>
-                  ))}
+                  {stepTypes.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
                 </select>
               </div>
             </div>
 
             <div className="pct-field">
               <label className="pct-label">Description</label>
-              <input
-                className="pct-input"
-                placeholder="What does this step do?"
-                value={stepDesc}
-                onChange={e => setStepDesc(e.target.value)}
-              />
+              <input className="pct-input" placeholder="What does this step do?" value={stepDesc} onChange={e => setStepDesc(e.target.value)} />
             </div>
 
             <div className="pct-field">
               <label className="pct-label">System Prompt</label>
-              <textarea
-                className="pct-input pct-ta pct-ta-md"
-                rows={4}
-                placeholder="You are a… (sets AI role/behavior)"
-                value={stepSystem}
-                onChange={e => setStepSystem(e.target.value)}
-              />
+              <textarea className="pct-input pct-ta pct-ta-md" rows={4} placeholder="You are a… (sets AI role/behavior)" value={stepSystem} onChange={e => setStepSystem(e.target.value)} />
             </div>
 
             <div className="pct-field">
               <label className="pct-label">User Prompt</label>
-              <textarea
-                className="pct-input pct-ta pct-ta-md"
-                rows={4}
-                placeholder="Use {{prev_output}} to chain from the previous step"
-                value={stepUser}
-                onChange={e => setStepUser(e.target.value)}
-              />
-              <span className="pct-hint">
-                Use <code className="pct-code">{`{{prev_output}}`}</code> to pass the previous step's result
-              </span>
+              <textarea className="pct-input pct-ta pct-ta-md" rows={4} placeholder="Use {{prev_output}} to chain from the previous step" value={stepUser} onChange={e => setStepUser(e.target.value)} />
+              <span className="pct-hint">Use <code className="pct-code">{`{{prev_output}}`}</code> to pass the previous step's result</span>
             </div>
 
             <div className="pct-dialog-actions">
@@ -923,11 +716,12 @@ export default function PromptChainTool() {
 
         <div className="pct-body">
           <aside className="pct-sidebar">
-            <div className="pct-panel">
+            <div className="pct-panel" style={{ display: 'flex', flexDirection: 'column' }}>
               <div className="pct-panel-hd">
                 <span className="pct-panel-title">Flavors</span>
                 <button className="pct-btn pct-primary pct-sm" onClick={openCreateFlavor}>+ New</button>
               </div>
+
               {loadingFlavors ? (
                 <div className="pct-sk-list">
                   {[1, 2, 3].map(i => <div key={i} className="pct-sk pct-sk-row" />)}
@@ -940,25 +734,50 @@ export default function PromptChainTool() {
                   <button className="pct-btn pct-primary pct-sm" onClick={openCreateFlavor}>Create</button>
                 </div>
               ) : (
-                <ul className="pct-flavor-list">
-                  {flavors.map(f => (
-                    <li
-                      key={f.id}
-                      className={`pct-flavor-item${selectedFlavor?.id === f.id ? ' active' : ''}`}
-                      onClick={() => setSelectedFlavor(f)}
+                <>
+                  <ul className="pct-flavor-list">
+                    {pagedFlavors.map(f => (
+                      <li
+                        key={f.id}
+                        className={`pct-flavor-item${selectedFlavor?.id === f.id ? ' active' : ''}`}
+                        onClick={() => setSelectedFlavor(f)}
+                      >
+                        <div className="pct-flavor-main">
+                          <span className="pct-flavor-slug">{f.slug}</span>
+                          {f.description && <span className="pct-flavor-desc">{f.description}</span>}
+                        </div>
+                        <div className="pct-flavor-btns" onClick={e => e.stopPropagation()}>
+                          <button className="pct-ibtn" onClick={() => openEditFlavor(f)} title="Edit">✏️</button>
+                          <button className="pct-ibtn" onClick={() => openDuplicateFlavor(f)} title="Duplicate">📋</button>
+                          <button className="pct-ibtn pct-ibtn-del" onClick={() => confirmDeleteFlavor(f)} title="Delete">🗑️</button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+
+                  {/* ── Pagination ── */}
+                  <div className="pct-flavor-pagination">
+                    <button
+                      className="pct-ibtn"
+                      disabled={flavorPage === 1}
+                      onClick={() => setFlavorPage(p => p - 1)}
+                      title="Previous page"
                     >
-                      <div className="pct-flavor-main">
-                        <span className="pct-flavor-slug">{f.slug}</span>
-                        {f.description && <span className="pct-flavor-desc">{f.description}</span>}
-                      </div>
-                      <div className="pct-flavor-btns" onClick={e => e.stopPropagation()}>
-                        <button className="pct-ibtn" onClick={() => openEditFlavor(f)} title="Edit">✏️</button>
-                        <button className="pct-ibtn" onClick={() => openDuplicateFlavor(f)} title="Duplicate">📋</button>
-                        <button className="pct-ibtn pct-ibtn-del" onClick={() => confirmDeleteFlavor(f)} title="Delete">🗑️</button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                      ←
+                    </button>
+                    <span className="pct-flavor-page-label">
+                      {flavorPage} / {totalPages}
+                    </span>
+                    <button
+                      className="pct-ibtn"
+                      disabled={flavorPage >= totalPages}
+                      onClick={() => setFlavorPage(p => p + 1)}
+                      title="Next page"
+                    >
+                      →
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           </aside>
@@ -1003,42 +822,36 @@ export default function PromptChainTool() {
                               <div className="pct-step-desc">
                                 {s.description || <em className="pct-faint">Untitled step</em>}
                               </div>
-
                               {s.humor_flavor_step_type_id != null && (
                                 <div className="pct-prompt-row">
                                   <span className="pct-prompt-tag">Step Type</span>
                                   <span className="pct-prompt-text">{getLabel(stepTypes, s.humor_flavor_step_type_id)}</span>
                                 </div>
                               )}
-
                               {s.llm_model_id != null && (
                                 <div className="pct-prompt-row">
                                   <span className="pct-prompt-tag">Model</span>
                                   <span className="pct-prompt-text">{getLabel(llmModels, s.llm_model_id)}</span>
                                 </div>
                               )}
-
                               {s.llm_input_type_id != null && (
                                 <div className="pct-prompt-row">
                                   <span className="pct-prompt-tag">Input</span>
                                   <span className="pct-prompt-text">{getLabel(llmInputTypes, s.llm_input_type_id)}</span>
                                 </div>
                               )}
-
                               {s.llm_output_type_id != null && (
                                 <div className="pct-prompt-row">
                                   <span className="pct-prompt-tag">Output</span>
                                   <span className="pct-prompt-text">{getLabel(llmOutputTypes, s.llm_output_type_id)}</span>
                                 </div>
                               )}
-
                               {s.llm_system_prompt && (
                                 <div className="pct-prompt-row">
                                   <span className="pct-prompt-tag">System</span>
                                   <span className="pct-prompt-text">{s.llm_system_prompt}</span>
                                 </div>
                               )}
-
                               {s.llm_user_prompt && (
                                 <div className="pct-prompt-row">
                                   <span className="pct-prompt-tag pct-prompt-tag-user">User</span>
@@ -1046,7 +859,6 @@ export default function PromptChainTool() {
                                 </div>
                               )}
                             </div>
-
                             <div className="pct-step-actions">
                               <button className="pct-ibtn" disabled={i === 0} onClick={() => moveStep(s, 'up')} title="Move up">↑</button>
                               <button className="pct-ibtn" disabled={i === sortedSteps.length - 1} onClick={() => moveStep(s, 'down')} title="Move down">↓</button>
@@ -1054,7 +866,6 @@ export default function PromptChainTool() {
                               <button className="pct-ibtn pct-ibtn-del" onClick={() => confirmDeleteStep(s, i)} title="Delete">🗑️</button>
                             </div>
                           </div>
-
                           {i < sortedSteps.length - 1 && (
                             <div className="pct-connector">
                               <div className="pct-connector-line" />
@@ -1072,12 +883,10 @@ export default function PromptChainTool() {
                     <span className="pct-panel-title">🧪 Test This Flavor</span>
                     {testRunning && <span className="pct-spinner" />}
                   </div>
-
                   <div className="pct-test-grid">
                     <div className="pct-test-left">
                       <div className="pct-field">
                         <label className="pct-label">Test Image</label>
-
                         <div
                           className={`pct-dropzone${uploading ? ' uploading' : ''}`}
                           onClick={() => !uploading && fileInputRef.current?.click()}
@@ -1092,9 +901,7 @@ export default function PromptChainTool() {
                           ) : uploadedImageUrl ? (
                             <div className="pct-dropzone-preview">
                               <img src={uploadedImageUrl} alt="Uploaded" className="pct-dropzone-img" />
-                              <div className="pct-dropzone-overlay">
-                                <span>Click or drop to replace</span>
-                              </div>
+                              <div className="pct-dropzone-overlay"><span>Click or drop to replace</span></div>
                             </div>
                           ) : (
                             <div className="pct-dropzone-inner">
@@ -1104,31 +911,14 @@ export default function PromptChainTool() {
                             </div>
                           )}
                         </div>
-
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          accept="image/*"
-                          style={{ display: 'none' }}
-                          onChange={handleFileChange}
-                        />
-
+                        <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
                         {uploadedImageUrl && (
-                          <button
-                            className="pct-btn pct-ghost pct-sm"
-                            style={{ alignSelf: 'flex-start', marginTop: 4 }}
-                            onClick={() => {
-                              setUploadedImageUrl(null)
-                              setUploadedImageId(null)
-                              setTestResults([])
-                              setTestError(null)
-                            }}
-                          >
+                          <button className="pct-btn pct-ghost pct-sm" style={{ alignSelf: 'flex-start', marginTop: 4 }}
+                            onClick={() => { setUploadedImageUrl(null); setUploadedImageId(null); setTestResults([]); setTestError(null) }}>
                             ✕ Remove image
                           </button>
                         )}
                       </div>
-
                       <button
                         className="pct-btn pct-primary pct-run-btn"
                         onClick={runChain}
@@ -1138,48 +928,29 @@ export default function PromptChainTool() {
                           ? <><span className="pct-spinner-sm" /> Generating…</>
                           : `▶ Run ${sortedSteps.length} step${sortedSteps.length !== 1 ? 's' : ''}`}
                       </button>
-
-                      {sortedSteps.length === 0 && (
-                        <p className="pct-hint pct-hint-warn">Add steps above first.</p>
-                      )}
-                      {sortedSteps.length > 0 && !uploadedImageId && (
-                        <p className="pct-hint pct-hint-warn">Upload an image to run.</p>
-                      )}
+                      {sortedSteps.length === 0 && <p className="pct-hint pct-hint-warn">Add steps above first.</p>}
+                      {sortedSteps.length > 0 && !uploadedImageId && <p className="pct-hint pct-hint-warn">Upload an image to run.</p>}
                     </div>
 
                     <div className="pct-test-right">
                       <label className="pct-label" style={{ marginBottom: 8 }}>Generated Captions</label>
-
-                      {testError && (
-                        <div className="pct-error-box"><strong>Error:</strong> {testError}</div>
-                      )}
-
+                      {testError && <div className="pct-error-box"><strong>Error:</strong> {testError}</div>}
                       {!testError && !testRunning && testResults.length === 0 && (
-                        <div className="pct-captions-empty">
-                          <div>Captions will appear here after running.</div>
-                        </div>
+                        <div className="pct-captions-empty"><div>Captions will appear here after running.</div></div>
                       )}
-
                       {testRunning && testResults.length === 0 && (
                         <div className="pct-sk-list">
                           {[1, 2, 3, 4, 5].map(i => <div key={i} className="pct-sk pct-sk-caption" />)}
                         </div>
                       )}
-
                       {testResults.length > 0 && (
                         <ol className="pct-captions">
                           {testResults.map((cap, i) => (
                             <li key={i} className="pct-caption">
                               <span className="pct-cap-num">{i + 1}</span>
                               <span className="pct-cap-text">{cap}</span>
-                              <button
-                                className="pct-ibtn"
-                                title="Copy"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(cap)
-                                  showToast('Copied!', 'success')
-                                }}
-                              >
+                              <button className="pct-ibtn" title="Copy"
+                                onClick={() => { navigator.clipboard.writeText(cap); showToast('Copied!', 'success') }}>
                                 📋
                               </button>
                             </li>
