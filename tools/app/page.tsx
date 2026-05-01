@@ -18,13 +18,7 @@ type ColorMode = 'light' | 'dark' | 'system'
 const ITEMS_PER_PAGE = 10
 
 const NAV_GROUPS = [
-  {
-    group: 'dashboard',
-    label: 'Prompt Tool',
-    tabs: [
-      { tab: 'prompt_chain_tool', label: 'Prompt Chain Tool' },
-    ],
-  },
+  { group: 'dashboard', label: 'Prompt Tool' },
   { group: 'images', label: 'Images' },
   {
     group: 'captions', label: 'Captions',
@@ -323,8 +317,6 @@ export default function Page() {
     return supabase.storage.from('images').getPublicUrl(fileName).data.publicUrl
   }
 
-
-
   // ── Test flavor via REST API ──
   const handleTestFlavor = async () => {
     if (!testFlavorId || !testImageUrl) {
@@ -435,11 +427,13 @@ export default function Page() {
     </td>
   )
 
-const activeGroup: NavGroup =
-  (['captions', 'caption_examples', 'caption_requests'] as string[]).includes(activeTab) ? 'captions' :
-  (['humor_flavors', 'humor_flavor_steps', 'humor_flavor_mix'] as string[]).includes(activeTab) ? 'humor' :
-  (['llm_models', 'llm_providers', 'llm_responses', 'llm_prompt_chains'] as string[]).includes(activeTab) ? 'llm' :
-  activeTab as NavGroup
+  const activeGroup: NavGroup =
+    (['captions', 'caption_examples', 'caption_requests'] as string[]).includes(activeTab) ? 'captions' :
+    (['humor_flavors', 'humor_flavor_steps', 'humor_flavor_mix'] as string[]).includes(activeTab) ? 'humor' :
+    (['llm_models', 'llm_providers', 'llm_responses', 'llm_prompt_chains'] as string[]).includes(activeTab) ? 'llm' :
+    activeTab === 'prompt_chain_tool' ? 'dashboard' :
+    activeTab as NavGroup
+
   if (!user) {
     return (
       <div className="login-wrapper">
@@ -545,7 +539,12 @@ const activeGroup: NavGroup =
           {NAV_GROUPS.map(({ group, label, tabs }) =>
             !tabs ? (
               <button key={group} className={`nav-tab-btn${activeGroup === group ? ' active' : ''}`}
-                onClick={() => { changeTab(group as Tab); setOpenGroup(null) }}>
+                onClick={() => {
+                  // dashboard group maps to prompt_chain_tool tab
+                  const tab = group === 'dashboard' ? 'prompt_chain_tool' : group
+                  changeTab(tab as Tab)
+                  setOpenGroup(null)
+                }}>
                 {label}
               </button>
             ) : (
@@ -596,7 +595,6 @@ const activeGroup: NavGroup =
         {activeTab === 'prompt_chain_tool' && (
           <PromptChainTool />
         )}
-
 
         {activeTab === 'images' && (
           <div className="card">
@@ -733,9 +731,6 @@ const activeGroup: NavGroup =
           </div>
         )}
 
-        {/* ════════════════════════════════════════
-            HUMOR FLAVORS — full CRUD + test panel
-        ════════════════════════════════════════ */}
         {activeTab === 'humor_flavors' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div className="card">
@@ -771,7 +766,6 @@ const activeGroup: NavGroup =
               <Pagination pager={humorFlavorP} data={humorFlavors} />
             </div>
 
-            {/* ── Test Flavor Panel ── */}
             <div className="card">
               <h2 className="section-title">🧪 Test a Humor Flavor</h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxWidth: '560px' }}>
@@ -821,9 +815,6 @@ const activeGroup: NavGroup =
           </div>
         )}
 
-        {/* ════════════════════════════════════════
-            HUMOR FLAVOR STEPS — CRUD + reorder
-        ════════════════════════════════════════ */}
         {activeTab === 'humor_flavor_steps' && (
           <div className="card">
             <div className="section-header">
@@ -851,7 +842,6 @@ const activeGroup: NavGroup =
                       <td className="td">{s.created_datetime_utc ? new Date(s.created_datetime_utc).toLocaleString() : '—'}</td>
                       <td className="td">{s.modified_datetime_utc ? new Date(s.modified_datetime_utc).toLocaleString() : '—'}</td>
                       <td className="td" style={{ whiteSpace: 'nowrap' }}>
-
                         <button className="btn-edit" onClick={() => openModal('humor_flavor_step_edit', s)}>Edit</button>
                         <button className="btn-delete" onClick={() => handleDelete('humor_flavor_steps', s.id, 'step', () => fetchTable('humor_flavor_steps', setHumorFlavorSteps, humorFlavorStepP.page, '*', 'order_by'))}>Delete</button>
                       </td>
@@ -1094,7 +1084,6 @@ const activeGroup: NavGroup =
           refresh={() => fetchTable('caption_examples', setCaptionExamples, captionExP.page)} />
       )}
 
-      {/* ── Humor Flavor Create ── */}
       {modal?.type === 'humor_flavor_new' && (
         <FormModal
           title="Create Humor Flavor"
@@ -1107,7 +1096,6 @@ const activeGroup: NavGroup =
         />
       )}
 
-      {/* ── Humor Flavor Edit ── */}
       {modal?.type === 'humor_flavor_edit' && (
         <FormModal
           title="Edit Humor Flavor"
@@ -1120,7 +1108,6 @@ const activeGroup: NavGroup =
         />
       )}
 
-      {/* ── Humor Flavor Step Create ── */}
       {modal?.type === 'humor_flavor_step_new' && (
         <FormModal
           title="Create Flavor Step"
@@ -1137,7 +1124,6 @@ const activeGroup: NavGroup =
         />
       )}
 
-      {/* ── Humor Flavor Step Edit ── */}
       {modal?.type === 'humor_flavor_step_edit' && (
         <FormModal
           title="Edit Flavor Step"
