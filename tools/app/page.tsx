@@ -442,7 +442,7 @@ export default function Page() {
             <div className="login-logo-tile">HA</div>
             <div>
               <div className="login-brand-label">Humor Project</div>
-              <h1 className="login-title">Login to Admin Dashboard<br /><span className="login-title-accent">for the Humor Project</span></h1>
+              <h1 className="login-title">Login to Admin Dashboard with Prompt Tool<br /><span className="login-title-accent">for the Humor Project</span></h1>
             </div>
           </div>
           <div className="login-divider" />
